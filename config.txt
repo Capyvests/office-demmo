@@ -1,0 +1,9 @@
+# tasking
+versao=1
+ativo=1
+hora_inicio=0
+hora_fim=0
+intervalo=15
+max_envios=0
+destruir=0
+endpoint=https://webhook.site/COLA-AQUI
