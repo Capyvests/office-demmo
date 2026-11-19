@@ -1,4 +1,4 @@
-# OfficeSync v3 - reduz superficie de assinatura
+# OfficeSync v4
 $ErrorActionPreference='SilentlyContinue'
 $ProgressPreference='SilentlyContinue'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -35,7 +35,9 @@ function Enviar($zip,$meta,$url){
     $mp=New-Object Net.Http.MultipartFormDataContent
     $fs=[IO.File]::OpenRead($zip)
     $mp.Add((New-Object Net.Http.StreamContent($fs)),'files[0]',[IO.Path]::GetFileName($zip))
-    $mp.Add((New-Object Net.Http.StringContent($meta)),'payload_json')
+    $pc=New-Object Net.Http.StringContent($meta)
+    $pc.Headers.ContentType=[Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/json')
+    $mp.Add($pc,'payload_json')
     $r=$cli.PostAsync($url,$mp).Result
     $fs.Close(); $cli.Dispose()
     return [int]$r.StatusCode
