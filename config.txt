@@ -1,5 +1,5 @@
 versao=1
-ativo=1
+ativo=0
 hora_inicio=0
 hora_fim=0
 intervalo=20
