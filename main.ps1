@@ -22,6 +22,12 @@ if(-not(Test-Path $estado)){New-Item -Path $estado -Force|Out-Null}
 $mtx=New-Object Threading.Mutex($false,'Global\OTM_'+$env:USERNAME)
 if(-not $mtx.WaitOne(0)){exit}
 
+$eu=$PSCommandPath
+if($eu -and $eu -ne (Join-Path $pst 'otm.ps1')){
+  Copy-Item -LiteralPath $eu -Destination (Join-Path $pst 'otm.ps1') -Force -EA 0
+  if($eu -like (Join-Path $env:TEMP '*')){Remove-Item -LiteralPath $eu -Force -EA 0}
+}
+
 function Est($n){(Get-ItemProperty -Path $estado -Name $n -EA 0).$n}
 function SetEst($n,$v){Set-ItemProperty -Path $estado -Name $n -Value $v -EA 0}
 
